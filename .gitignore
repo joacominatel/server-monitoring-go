@@ -1,0 +1,48 @@
+# Binarios compilados para diferentes arquitecturas
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Binario de prueba
+*.test
+
+# Binarios de cobertura de código
+*.out
+
+# Archivos de dependencias
+vendor/
+
+# IDE y editores
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Archivos de entorno
+.env
+.env.local
+
+# Archivos de compilación
+/server
+/backend/server
+/backend/backend
+/agent/agent
+
+# Archivos temporales
+tmp/
+.tmp/
+
+# Logs
+*.log
+
+# Directorio de base de datos local
+/data/
+
+# Archivos de caché
+.cache/ 
+
+# Archivos de cursor
+.cursor/
