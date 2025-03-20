@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jminat01/dashboard-servers-go/backend/config"
 	"github.com/jminat01/dashboard-servers-go/backend/internal/handlers"
+	"github.com/jminat01/dashboard-servers-go/backend/internal/middleware"
 	"github.com/jminat01/dashboard-servers-go/backend/internal/models"
 	"github.com/jminat01/dashboard-servers-go/backend/internal/services"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/database"
@@ -43,6 +44,7 @@ func main() {
 		&models.Server{}, 
 		&models.Metric{},
 		&models.Log{}, // Añadir tabla de logs
+		&models.User{}, // Añadir tabla de usuarios
 	); err != nil {
 		log.Fatalf("Error en la migración automática: %v", err)
 	}
@@ -57,11 +59,21 @@ func main() {
 	// Inicializar resto de servicios con el nuevo logger
 	serverService := services.NewServerService(db.DB, log)
 	metricService := services.NewMetricService(db.DB, log)
+	userService := services.NewUserService(db.DB, log)
+	authService := services.NewAuthService(db.DB, log, cfg.Auth.JWTSecret, 86400) // Token válido por 24 horas en segundos
+
+	// Crear usuario admin por defecto si no existe
+	createDefaultAdmin(userService, log, cfg)
+
+	// Inicializar middleware de autenticación
+	authMiddleware := middleware.NewAuthMiddleware(authService, log)
 
 	// Inicializar handlers
 	serverHandler := handlers.NewServerHandler(serverService, log)
 	metricHandler := handlers.NewMetricHandler(metricService, serverService, log)
 	logHandler := handlers.NewLogHandler(logService, log)
+	authHandler := handlers.NewAuthHandler(authService, userService, log)
+	userHandler := handlers.NewUserHandler(userService, log)
 
 	// Configurar router
 	router := gin.Default()
@@ -71,6 +83,7 @@ func main() {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true") // Importante para cookies
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -88,9 +101,22 @@ func main() {
 	})
 
 	// Registrar rutas
-	serverHandler.RegisterRoutes(router)
-	metricHandler.RegisterRoutes(router)
-	logHandler.RegisterRoutes(router) // Registrar rutas para logs
+	authHandler.RegisterRoutes(router, authMiddleware)
+	userHandler.RegisterRoutes(router, authMiddleware)
+	
+	// Registrar rutas protegidas con autenticación
+	serverRoutes := router.Group("/api")
+	serverRoutes.Use(authMiddleware.RequireAuth())
+	
+	// Registrar rutas de servidores y métricas (requieren autenticación)
+	serverHandler.RegisterRoutes(serverRoutes)
+	metricHandler.RegisterRoutes(serverRoutes)
+	
+	// Ruta de logs (requiere rol de admin)
+	logRoutes := router.Group("/api")
+	logRoutes.Use(authMiddleware.RequireAuth())
+	logRoutes.Use(authMiddleware.RequireRole(models.RoleAdmin))
+	logHandler.RegisterRoutes(logRoutes)
 
 	// Manejar señales para apagado graceful
 	quit := make(chan os.Signal, 1)
@@ -116,4 +142,36 @@ func main() {
 	}
 
 	log.Info("Servidor apagado exitosamente")
+}
+
+// createDefaultAdmin crea un usuario administrador por defecto si no existe
+func createDefaultAdmin(userService *services.UserService, log logger.Logger, cfg *config.Config) {
+	_, err := userService.GetUserByUsername("admin")
+	
+	// Si el usuario no existe, crearlo
+	if err != nil {
+		log.Info("Creando usuario administrador por defecto...")
+		
+		// Usar contraseña de configuración o una por defecto
+		password := cfg.Auth.DefaultAdminPassword
+		if password == "" {
+			password = "admin123" // Contraseña por defecto
+			log.Warn("Usando contraseña por defecto para admin. Se recomienda cambiarla inmediatamente.")
+		}
+		
+		admin := &models.User{
+			Username: "admin",
+			Email:    "admin@sistema.local",
+			Role:     models.RoleAdmin,
+		}
+		
+		if err := userService.CreateUser(admin, password); err != nil {
+			log.Errorf("Error al crear usuario admin por defecto: %v", err)
+			return
+		}
+		
+		log.Info("Usuario administrador creado exitosamente. Username: admin")
+	} else {
+		log.Info("Usuario administrador ya existe, omitiendo creación")
+	}
 } 

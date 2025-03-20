@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Database DatabaseConfig
 	Server   ServerConfig
+	Auth     AuthConfig
 }
 
 // DatabaseConfig contiene la configuración de la base de datos
@@ -29,6 +30,12 @@ type DatabaseConfig struct {
 type ServerConfig struct {
 	Port string
 	Env  string
+}
+
+// AuthConfig contiene la configuración de autenticación
+type AuthConfig struct {
+	JWTSecret           string
+	DefaultAdminPassword string
 }
 
 // LoadConfig carga la configuración desde el archivo .env
@@ -52,6 +59,10 @@ func LoadConfig() (*Config, error) {
 		Server: ServerConfig{
 			Port: getEnv("SERVER_PORT", "8080"),
 			Env:  getEnv("ENV", "development"),
+		},
+		Auth: AuthConfig{
+			JWTSecret:           getEnv("JWT_SECRET", "mi_clave_secreta_jwt_para_desarrollo"),
+			DefaultAdminPassword: getEnv("ADMIN_PASSWORD", ""),
 		},
 	}
 

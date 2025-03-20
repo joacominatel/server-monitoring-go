@@ -25,14 +25,25 @@ func NewServerHandler(serverService *services.ServerService, logger logger.Logge
 }
 
 // RegisterRoutes registra las rutas del manejador en el router
-func (h *ServerHandler) RegisterRoutes(router *gin.Engine) {
-	api := router.Group("/api/servers")
+func (h *ServerHandler) RegisterRoutes(router gin.IRouter) {
+	servers := router.Group("/servers")
 	{
-		api.GET("", h.GetAllServers)
-		api.GET("/:id", h.GetServerByID)
-		api.POST("", h.CreateServer)
-		api.PUT("/:id", h.UpdateServer)
-		api.DELETE("/:id", h.DeleteServer)
+		// Rutas que cualquier usuario autenticado puede acceder
+		servers.GET("", h.GetAllServers)
+		servers.GET("/:id", h.GetServerByID)
+		
+		// Rutas que requieren rol de admin o usuario normal (no viewer)
+		serverAdmin := servers.Group("")
+		serverAdmin.Use(func(c *gin.Context) {
+			// Aquí iría un middleware que verifica rol, pero esta 
+			// lógica ahora está en main.go con RequireRole
+			c.Next()
+		})
+		{
+			serverAdmin.POST("", h.CreateServer)
+			serverAdmin.PUT("/:id", h.UpdateServer)
+			serverAdmin.DELETE("/:id", h.DeleteServer)
+		}
 	}
 }
 

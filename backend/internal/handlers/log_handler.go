@@ -26,11 +26,13 @@ func NewLogHandler(logService *services.LogService, logger logger.Logger) *LogHa
 }
 
 // RegisterRoutes registra las rutas del manejador en el router
-func (h *LogHandler) RegisterRoutes(router *gin.Engine) {
-	api := router.Group("/api/logs")
+func (h *LogHandler) RegisterRoutes(router gin.IRouter) {
+	logs := router.Group("/logs")
 	{
-		api.GET("", h.GetLogs)
-		api.DELETE("/cleanup", h.CleanupOldLogs)
+		// Rutas para consulta y mantenimiento de logs
+		// Nota: estas rutas ya están protegidas en main.go con RequireRole(models.RoleAdmin)
+		logs.GET("", h.GetLogs)
+		logs.DELETE("/cleanup", h.CleanupOldLogs)
 	}
 }
 

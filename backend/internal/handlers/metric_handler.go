@@ -28,13 +28,17 @@ func NewMetricHandler(metricService *services.MetricService, serverService *serv
 }
 
 // RegisterRoutes registra las rutas del manejador en el router
-func (h *MetricHandler) RegisterRoutes(router *gin.Engine) {
-	api := router.Group("/api/metrics")
+func (h *MetricHandler) RegisterRoutes(router gin.IRouter) {
+	metrics := router.Group("/metrics")
 	{
-		api.POST("", h.CreateMetric)
-		api.GET("/server/:server_id", h.GetMetricsByServerID)
-		api.GET("/server/:server_id/latest", h.GetLatestMetricByServerID)
-		api.GET("/server/:server_id/timerange", h.GetMetricsByTimeRange)
+		// Rutas para consulta de métricas (disponible para cualquier usuario autenticado)
+		metrics.GET("/server/:server_id", h.GetMetricsByServerID)
+		metrics.GET("/server/:server_id/latest", h.GetLatestMetricByServerID)
+		metrics.GET("/server/:server_id/timerange", h.GetMetricsByTimeRange)
+		
+		// Ruta para creación de métricas (normalmente solo desde agentes o sistemas, 
+		// pero lo dejamos protegido con autenticación básica)
+		metrics.POST("", h.CreateMetric)
 	}
 }
 
