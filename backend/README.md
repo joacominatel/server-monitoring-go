@@ -8,7 +8,8 @@ Este es el backend para la Plataforma de Monitoreo de Servidores, desarrollado e
 - Almacenamiento en PostgreSQL usando GORM
 - Gestión de servidores y métricas
 - Consulta de métricas por rango de tiempo
-- Logs estructurados
+- Logs estructurados con persistencia en base de datos
+- Consulta y gestión de logs históricos vía API
 
 ## Requisitos
 
@@ -79,6 +80,11 @@ go run main.go
 - `GET /api/metrics/server/:server_id/latest` - Obtener la última métrica de un servidor
 - `GET /api/metrics/server/:server_id/timerange` - Obtener métricas por rango de tiempo
 
+### Logs
+
+- `GET /api/logs` - Obtener logs con filtros (nivel, fuente, fecha)
+- `DELETE /api/logs/cleanup` - Eliminar logs antiguos
+
 ## Ejemplos de uso
 
 ### Crear un servidor
@@ -114,4 +120,17 @@ curl -X POST http://localhost:8080/api/metrics \
 
 ```bash
 curl "http://localhost:8080/api/metrics/server/1/timerange?start=2023-10-01T00:00:00Z&end=2023-10-02T23:59:59Z"
+```
+
+### Consultar logs
+
+```bash
+# Obtener los últimos 50 logs de nivel ERROR
+curl "http://localhost:8080/api/logs?level=ERROR&limit=50"
+
+# Obtener logs por fuente y rango de fechas
+curl "http://localhost:8080/api/logs?source=system&start_date=2023-10-01T00:00:00Z&end_date=2023-10-02T23:59:59Z"
+
+# Limpiar logs antiguos (más de 30 días)
+curl -X DELETE "http://localhost:8080/api/logs/cleanup?days=30"
 ``` 

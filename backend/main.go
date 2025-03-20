@@ -23,7 +23,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Inicializar logger
+	// Inicializar logger básico para el arranque
 	log := logger.NewLogger(cfg.Server.Env)
 	log.Info("Iniciando servidor de monitoreo...")
 
@@ -39,17 +39,29 @@ func main() {
 	}
 
 	// Migrar modelos
-	if err := db.AutoMigrate(&models.Server{}, &models.Metric{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.Server{}, 
+		&models.Metric{},
+		&models.Log{}, // Añadir tabla de logs
+	); err != nil {
 		log.Fatalf("Error en la migración automática: %v", err)
 	}
 
 	// Inicializar servicios
+	logService := services.NewLogService(db.DB, log)
+	
+	// Una vez que tenemos el servicio de logs, podemos crear un logger con persistencia en BD
+	log = logger.NewDBLogger(log, logService, "system")
+	log.Info("Sistema de logging en base de datos inicializado")
+
+	// Inicializar resto de servicios con el nuevo logger
 	serverService := services.NewServerService(db.DB, log)
 	metricService := services.NewMetricService(db.DB, log)
 
 	// Inicializar handlers
 	serverHandler := handlers.NewServerHandler(serverService, log)
 	metricHandler := handlers.NewMetricHandler(metricService, serverService, log)
+	logHandler := handlers.NewLogHandler(logService, log)
 
 	// Configurar router
 	router := gin.Default()
@@ -78,6 +90,7 @@ func main() {
 	// Registrar rutas
 	serverHandler.RegisterRoutes(router)
 	metricHandler.RegisterRoutes(router)
+	logHandler.RegisterRoutes(router) // Registrar rutas para logs
 
 	// Manejar señales para apagado graceful
 	quit := make(chan os.Signal, 1)
