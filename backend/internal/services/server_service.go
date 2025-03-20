@@ -4,9 +4,13 @@ import (
 	"errors"
 
 	"github.com/jminat01/dashboard-servers-go/backend/internal/models"
+	"github.com/jminat01/dashboard-servers-go/backend/pkg/interfaces"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/logger"
 	"gorm.io/gorm"
 )
+
+// Asegurar que ServerService implementa la interfaz ServerServiceInterface
+var _ interfaces.ServerServiceInterface = &ServerService{}
 
 // ServerService maneja la lógica de negocio relacionada con servidores
 type ServerService struct {
@@ -35,7 +39,7 @@ func (s *ServerService) GetAllServers() ([]models.Server, error) {
 }
 
 // GetServerByID obtiene un servidor por su ID
-func (s *ServerService) GetServerByID(id uint) (*models.Server, error) {
+func (s *ServerService) GetServerByID(id uint) (interface{}, error) {
 	var server models.Server
 	
 	if err := s.db.First(&server, id).Error; err != nil {

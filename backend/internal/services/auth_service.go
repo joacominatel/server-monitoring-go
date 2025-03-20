@@ -7,9 +7,13 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jminat01/dashboard-servers-go/backend/internal/models"
+	"github.com/jminat01/dashboard-servers-go/backend/pkg/interfaces"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/logger"
 	"gorm.io/gorm"
 )
+
+// Asegurar que AuthService implementa la interfaz AuthServiceInterface
+var _ interfaces.AuthServiceInterface = &AuthService{}
 
 // Errores relacionados con autenticación
 var (
@@ -166,4 +170,40 @@ func (s *AuthService) CheckUserRole(userID uint, minRole models.Role) error {
 	}
 	
 	return nil
+}
+
+// ValidateToken verifica y valida un token JWT
+func (s *AuthService) ValidateToken(tokenString string) (*interfaces.TokenClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+		// Verificar que se está usando el algoritmo correcto
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("método de firma inválido")
+		}
+		
+		return s.jwtSecret, nil
+	})
+	
+	if err != nil {
+		s.logger.Warnf("Error al validar token: %v", err)
+		return nil, err
+	}
+	
+	if !token.Valid {
+		return nil, errors.New("token inválido")
+	}
+	
+	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	if !ok {
+		return nil, errors.New("claims inválidas")
+	}
+	
+	// Verificar expiración
+	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
+		return nil, errors.New("token expirado")
+	}
+
+	// Convertir a interfaces.TokenClaims
+	return &interfaces.TokenClaims{
+		Subject: claims.Subject,
+	}, nil
 } 

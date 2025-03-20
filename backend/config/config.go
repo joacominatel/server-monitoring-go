@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
@@ -14,6 +15,8 @@ type Config struct {
 	Database DatabaseConfig
 	Server   ServerConfig
 	Auth     AuthConfig
+	Redis    RedisConfig
+	WebSocket WebSocketConfig
 }
 
 // DatabaseConfig contiene la configuración de la base de datos
@@ -36,6 +39,21 @@ type ServerConfig struct {
 type AuthConfig struct {
 	JWTSecret           string
 	DefaultAdminPassword string
+}
+
+// RedisConfig contiene la configuración de Redis para Pub/Sub
+type RedisConfig struct {
+	Host     string
+	Port     string
+	Password string
+	DB       int
+	Enabled  bool
+}
+
+// WebSocketConfig contiene la configuración del servidor WebSocket
+type WebSocketConfig struct {
+	PingInterval int // Intervalo de ping en segundos
+	AllowedOrigins []string
 }
 
 // LoadConfig carga la configuración desde el archivo .env
@@ -64,6 +82,17 @@ func LoadConfig() (*Config, error) {
 			JWTSecret:           getEnv("JWT_SECRET", "mi_clave_secreta_jwt_para_desarrollo"),
 			DefaultAdminPassword: getEnv("ADMIN_PASSWORD", ""),
 		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnv("REDIS_PORT", "6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvAsInt("REDIS_DB", 0),
+			Enabled:  getEnvAsBool("REDIS_ENABLED", false),
+		},
+		WebSocket: WebSocketConfig{
+			PingInterval: getEnvAsInt("WS_PING_INTERVAL", 30),
+			AllowedOrigins: getEnvAsStringSlice("WS_ALLOWED_ORIGINS", []string{"*"}),
+		},
 	}
 
 	return config, nil
@@ -82,4 +111,41 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// getEnvAsInt obtiene variable de entorno como entero
+func getEnvAsInt(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	
+	var intValue int
+	_, err := fmt.Sscanf(value, "%d", &intValue)
+	if err != nil || intValue != defaultValue {
+		return defaultValue
+	}
+	
+	return intValue
+}
+
+// getEnvAsBool obtiene variable de entorno como booleano
+func getEnvAsBool(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	
+	return value == "true" || value == "1" || value == "yes" || value == "y"
+}
+
+// getEnvAsStringSlice obtiene variable de entorno como slice de strings
+func getEnvAsStringSlice(key string, defaultValue []string) []string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	
+	// Implementación simple para separar por comas
+	return strings.Split(value, ",")
 } 

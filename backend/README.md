@@ -11,12 +11,15 @@ Este es el backend para la Plataforma de Monitoreo de Servidores, desarrollado e
 - Logs estructurados con persistencia en base de datos
 - Consulta y gestión de logs históricos vía API
 - Autenticación y autorización con JWT en cookies
+- Transmisión de métricas en tiempo real mediante WebSockets
 - Control de acceso basado en roles (RBAC)
+- Escalabilidad horizontal con Redis Pub/Sub
 
 ## Requisitos
 
 - Go 1.18 o superior
 - PostgreSQL 12 o superior
+- Redis (opcional, para escalabilidad horizontal)
 
 ## Configuración
 
@@ -34,6 +37,17 @@ SERVER_PORT=8080
 ENV=development
 JWT_SECRET=mi_clave_secreta_jwt_para_desarrollo
 ADMIN_PASSWORD=admin123
+
+# Configuración de Redis para WebSockets
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+REDIS_ENABLED=false
+
+# Configuración de WebSockets
+WS_PING_INTERVAL=30
+WS_ALLOWED_ORIGINS=*
 ```
 
 ## Ejecución
@@ -64,8 +78,78 @@ go run main.go
   │   ├── models/          # Modelos de datos
   │   ├── services/        # Lógica de negocio
   ├── pkg/                 # Bibliotecas compartidas
+  │   ├── interfaces/      # Interfaces para evitar dependencias circulares
   │   ├── logger/          # Sistema de logging
   │   ├── database/        # Conexión a la base de datos
+  │   ├── websocket/       # Sistema de WebSockets para tiempo real
+```
+
+## WebSockets para métricas en tiempo real
+
+El sistema implementa WebSockets para transmitir métricas en tiempo real, eliminando la necesidad de polling y mejorando la experiencia del usuario.
+
+### Arquitectura de WebSockets
+
+- **Hub**: Gestiona todas las conexiones activas y distribuye mensajes
+- **Client**: Representa una conexión individual y maneja lectura/escritura
+- **Interfaces**: Evita dependencias circulares entre paquetes
+- **Redis Pub/Sub**: Opcional para escalabilidad horizontal con múltiples instancias
+
+### Puntos de conexión WebSocket
+
+- `ws://servidor/api/metrics/live/:server_id` - Transmite métricas en tiempo real para un servidor específico
+
+### Autenticación para WebSockets
+
+Las conexiones WebSocket requieren autenticación. Hay dos formas de proporcionar el token JWT:
+
+1. **Headers**: Enviar el token en el header `Authorization: Bearer <token>`
+2. **Query Parameter**: Añadir `?token=<token>` a la URL de conexión
+
+### Comunicación
+
+- El servidor envía actualizaciones de métricas a todos los clientes conectados para un servidor específico
+- Se implementa ping/pong para mantener las conexiones activas
+- Las desconexiones se detectan y manejan automáticamente
+
+### Configuración WebSockets
+
+En el archivo `.env` se pueden configurar:
+```env
+WS_PING_INTERVAL=30 # Intervalo de ping en segundos
+WS_ALLOWED_ORIGINS=* # Orígenes permitidos (separados por coma)
+```
+
+### Escalabilidad con Redis Pub/Sub
+
+Para entornos con múltiples instancias del backend, se puede habilitar Redis para distribuir las métricas:
+
+```env
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+REDIS_ENABLED=false # Cambiar a true para habilitar Redis
+```
+
+### Ejemplo de cliente JavaScript
+
+```javascript
+// Conexión al WebSocket con autenticación
+const token = obtenerTokenJWT();
+const ws = new WebSocket(`ws://localhost:8080/api/metrics/live/1?token=${token}`);
+
+// Manejo de eventos
+ws.onopen = () => console.log('Conexión establecida');
+ws.onclose = () => console.log('Conexión cerrada');
+ws.onerror = (error) => console.error('Error de WebSocket:', error);
+
+// Recepción de métricas
+ws.onmessage = (event) => {
+  const metrica = JSON.parse(event.data);
+  console.log('Nueva métrica recibida:', metrica);
+  // Actualizar UI con la nueva métrica
+};
 ```
 
 ## Autenticación y Autorización
@@ -118,6 +202,7 @@ Se recomienda cambiar esta contraseña inmediatamente después del primer inicio
 - `GET /api/metrics/server/:server_id` - Obtener métricas por ID de servidor
 - `GET /api/metrics/server/:server_id/latest` - Obtener la última métrica de un servidor
 - `GET /api/metrics/server/:server_id/timerange` - Obtener métricas por rango de tiempo
+- `GET /api/metrics/live/:server_id` - **WebSocket** para métricas en tiempo real
 
 ### Logs (solo admin)
 

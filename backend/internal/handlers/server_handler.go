@@ -109,7 +109,7 @@ func (h *ServerHandler) UpdateServer(c *gin.Context) {
 	}
 	
 	// Primero verificar que el servidor existe
-	existingServer, err := h.serverService.GetServerByID(uint(id))
+	_, err = h.serverService.GetServerByID(uint(id))
 	if err != nil {
 		h.logger.Errorf("Error al obtener servidor para actualización: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Servidor no encontrado"})
@@ -125,7 +125,7 @@ func (h *ServerHandler) UpdateServer(c *gin.Context) {
 	}
 	
 	// Asegurar que el ID sea el correcto
-	serverUpdate.ID = existingServer.ID
+	serverUpdate.ID = uint(id)
 	
 	if err := h.serverService.UpdateServer(&serverUpdate); err != nil {
 		h.logger.Errorf("Error al actualizar servidor: %v", err)

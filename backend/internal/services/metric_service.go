@@ -3,22 +3,28 @@ package services
 import (
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/jminat01/dashboard-servers-go/backend/internal/models"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/logger"
+	"github.com/jminat01/dashboard-servers-go/backend/pkg/websocket"
 	"gorm.io/gorm"
 )
 
 // MetricService maneja la lógica de negocio relacionada con métricas
 type MetricService struct {
-	db     *gorm.DB
-	logger logger.Logger
+	db         *gorm.DB
+	logger     logger.Logger
+	hub        *websocket.Hub
+	redisClient *redis.Client
 }
 
 // NewMetricService crea una nueva instancia del servicio de métricas
-func NewMetricService(db *gorm.DB, logger logger.Logger) *MetricService {
+func NewMetricService(db *gorm.DB, logger logger.Logger, hub *websocket.Hub, redisClient *redis.Client) *MetricService {
 	return &MetricService{
-		db:     db,
-		logger: logger,
+		db:         db,
+		logger:     logger,
+		hub:        hub,
+		redisClient: redisClient,
 	}
 }
 
@@ -27,6 +33,11 @@ func (s *MetricService) CreateMetric(metric *models.Metric) error {
 	if err := s.db.Create(metric).Error; err != nil {
 		s.logger.Errorf("Error al crear métrica para servidor ID %d: %v", metric.ServerID, err)
 		return err
+	}
+	
+	// Transmitir la métrica a través de WebSockets
+	if s.hub != nil {
+		s.broadcastMetric(metric)
 	}
 	
 	s.logger.Infof("Métrica creada exitosamente para servidor ID %d", metric.ServerID)
@@ -92,4 +103,24 @@ func (s *MetricService) DeleteOldMetrics(olderThan time.Time) (int64, error) {
 	
 	s.logger.Infof("Se eliminaron %d métricas antiguas (anteriores a %v)", result.RowsAffected, olderThan)
 	return result.RowsAffected, nil
+}
+
+// broadcastMetric transmite una métrica a través de WebSockets
+func (s *MetricService) broadcastMetric(metric *models.Metric) {
+	if s.hub == nil {
+		return
+	}
+	
+	// Enviar a través del hub WebSocket
+	s.hub.BroadcastToServer(metric.ServerID, metric)
+}
+
+// HasWebSocketHub retorna true si el servicio tiene un hub WebSocket configurado
+func (s *MetricService) HasWebSocketHub() bool {
+	return s.hub != nil
+}
+
+// HasRedisClient retorna true si el servicio tiene un cliente Redis configurado
+func (s *MetricService) HasRedisClient() bool {
+	return s.redisClient != nil
 } 

@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/jminat01/dashboard-servers-go/backend/config"
 	"github.com/jminat01/dashboard-servers-go/backend/internal/handlers"
 	"github.com/jminat01/dashboard-servers-go/backend/internal/middleware"
@@ -14,6 +15,7 @@ import (
 	"github.com/jminat01/dashboard-servers-go/backend/internal/services"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/database"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/logger"
+	"github.com/jminat01/dashboard-servers-go/backend/pkg/websocket"
 )
 
 func main() {
@@ -55,10 +57,31 @@ func main() {
 	// Una vez que tenemos el servicio de logs, podemos crear un logger con persistencia en BD
 	log = logger.NewDBLogger(log, logService, "system")
 	log.Info("Sistema de logging en base de datos inicializado")
+	
+	// Configurar cliente Redis si está habilitado
+	var redisClient *redis.Client
+	if cfg.Redis.Enabled {
+		redisConfig := &websocket.RedisConfig{
+			Host:     cfg.Redis.Host,
+			Port:     cfg.Redis.Port,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+			Enabled:  cfg.Redis.Enabled,
+		}
+		
+		redisClient, err = websocket.NewRedisClient(redisConfig, log)
+		if err != nil {
+			log.Warnf("Error al conectar con Redis: %v. Continuando sin soporte de Redis.", err)
+		}
+	}
+	
+	// Inicializar el Hub de WebSockets
+	wsHub := websocket.NewHub(log, redisClient)
+	go wsHub.Run() // Iniciar en una goroutine
 
 	// Inicializar resto de servicios con el nuevo logger
 	serverService := services.NewServerService(db.DB, log)
-	metricService := services.NewMetricService(db.DB, log)
+	metricService := services.NewMetricService(db.DB, log, wsHub, redisClient)
 	userService := services.NewUserService(db.DB, log)
 	authService := services.NewAuthService(db.DB, log, cfg.Auth.JWTSecret, 86400) // Token válido por 24 horas en segundos
 
@@ -67,10 +90,11 @@ func main() {
 
 	// Inicializar middleware de autenticación
 	authMiddleware := middleware.NewAuthMiddleware(authService, log)
+	wsAuthMiddleware := websocket.NewWSAuthMiddleware(authService, log)
 
 	// Inicializar handlers
 	serverHandler := handlers.NewServerHandler(serverService, log)
-	metricHandler := handlers.NewMetricHandler(metricService, serverService, log)
+	metricHandler := handlers.NewMetricHandler(metricService, serverService, log, wsAuthMiddleware, wsHub)
 	logHandler := handlers.NewLogHandler(logService, log)
 	authHandler := handlers.NewAuthHandler(authService, userService, log)
 	userHandler := handlers.NewUserHandler(userService, log)
@@ -126,6 +150,7 @@ func main() {
 	go func() {
 		addr := fmt.Sprintf(":%s", cfg.Server.Port)
 		log.Infof("Servidor iniciado en http://localhost%s", addr)
+		log.Infof("WebSockets disponibles en ws://localhost%s/api/metrics/live/{server_id}", addr)
 		
 		if err := router.Run(addr); err != nil {
 			log.Fatalf("Error al iniciar servidor: %v", err)
@@ -135,10 +160,22 @@ func main() {
 	// Bloquear hasta que se reciba una señal de terminación
 	<-quit
 	log.Info("Apagando servidor...")
+	
+	// Detener el hub de WebSockets
+	if wsHub != nil {
+		wsHub.Stop()
+	}
 
 	// Cerrar conexión a la base de datos
 	if err := db.Close(); err != nil {
 		log.Errorf("Error al cerrar la conexión a la base de datos: %v", err)
+	}
+	
+	// Cerrar conexión a Redis si estaba activa
+	if redisClient != nil {
+		if err := redisClient.Close(); err != nil {
+			log.Errorf("Error al cerrar la conexión a Redis: %v", err)
+		}
 	}
 
 	log.Info("Servidor apagado exitosamente")

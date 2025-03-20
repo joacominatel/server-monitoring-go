@@ -9,6 +9,7 @@ import (
 	"github.com/jminat01/dashboard-servers-go/backend/internal/models"
 	"github.com/jminat01/dashboard-servers-go/backend/internal/services"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/logger"
+	"github.com/jminat01/dashboard-servers-go/backend/pkg/websocket"
 )
 
 // MetricHandler maneja las rutas relacionadas con métricas
@@ -16,14 +17,24 @@ type MetricHandler struct {
 	metricService *services.MetricService
 	serverService *services.ServerService
 	logger        logger.Logger
+	wsAuth        *websocket.WSAuthMiddleware
+	hub           *websocket.Hub
 }
 
 // NewMetricHandler crea una nueva instancia del manejador de métricas
-func NewMetricHandler(metricService *services.MetricService, serverService *services.ServerService, logger logger.Logger) *MetricHandler {
+func NewMetricHandler(
+	metricService *services.MetricService, 
+	serverService *services.ServerService, 
+	logger logger.Logger,
+	wsAuth *websocket.WSAuthMiddleware,
+	hub *websocket.Hub,
+) *MetricHandler {
 	return &MetricHandler{
 		metricService: metricService,
 		serverService: serverService,
 		logger:        logger,
+		wsAuth:        wsAuth,
+		hub:           hub,
 	}
 }
 
@@ -36,10 +47,19 @@ func (h *MetricHandler) RegisterRoutes(router gin.IRouter) {
 		metrics.GET("/server/:server_id/latest", h.GetLatestMetricByServerID)
 		metrics.GET("/server/:server_id/timerange", h.GetMetricsByTimeRange)
 		
+		// Ruta para WebSocket de métricas en tiempo real
+		metrics.GET("/live/:server_id", h.HandleLiveMetrics)
+		
 		// Ruta para creación de métricas (normalmente solo desde agentes o sistemas, 
 		// pero lo dejamos protegido con autenticación básica)
 		metrics.POST("", h.CreateMetric)
 	}
+}
+
+// HandleLiveMetrics gestiona la conexión WebSocket para métricas en tiempo real
+func (h *MetricHandler) HandleLiveMetrics(c *gin.Context) {
+	// La función HandleWSConnection hace toda la gestión necesaria
+	websocket.HandleWSConnection(c, h.hub, h.wsAuth, h.serverService)
 }
 
 // CreateMetric recibe y almacena una nueva métrica
