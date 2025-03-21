@@ -43,9 +43,9 @@ func main() {
 
 	// Migrar modelos
 	if err := db.AutoMigrate(
-		&models.Server{}, 
+		&models.Server{},
 		&models.Metric{},
-		&models.Log{}, // Añadir tabla de logs
+		&models.Log{},  // Añadir tabla de logs
 		&models.User{}, // Añadir tabla de usuarios
 	); err != nil {
 		log.Fatalf("Error en la migración automática: %v", err)
@@ -53,11 +53,11 @@ func main() {
 
 	// Inicializar servicios
 	logService := services.NewLogService(db.DB, log)
-	
+
 	// Una vez que tenemos el servicio de logs, podemos crear un logger con persistencia en BD
 	log = logger.NewDBLogger(log, logService, "system")
 	log.Info("Sistema de logging en base de datos inicializado")
-	
+
 	// Configurar cliente Redis si está habilitado
 	var redisClient *redis.Client
 	if cfg.Redis.Enabled {
@@ -68,13 +68,13 @@ func main() {
 			DB:       cfg.Redis.DB,
 			Enabled:  cfg.Redis.Enabled,
 		}
-		
+
 		redisClient, err = websocket.NewRedisClient(redisConfig, log)
 		if err != nil {
 			log.Warnf("Error al conectar con Redis: %v. Continuando sin soporte de Redis.", err)
 		}
 	}
-	
+
 	// Inicializar el Hub de WebSockets
 	wsHub := websocket.NewHub(log, redisClient)
 	go wsHub.Run() // Iniciar en una goroutine
@@ -104,10 +104,11 @@ func main() {
 
 	// Middleware para CORS
 	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		// Usar el origen específico en lugar de "*"
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:5500")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true") // Importante para cookies
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -127,15 +128,15 @@ func main() {
 	// Registrar rutas
 	authHandler.RegisterRoutes(router, authMiddleware)
 	userHandler.RegisterRoutes(router, authMiddleware)
-	
+
 	// Registrar rutas protegidas con autenticación
 	serverRoutes := router.Group("/api")
 	serverRoutes.Use(authMiddleware.RequireAuth())
-	
+
 	// Registrar rutas de servidores y métricas (requieren autenticación)
 	serverHandler.RegisterRoutes(serverRoutes)
 	metricHandler.RegisterRoutes(serverRoutes)
-	
+
 	// Ruta de logs (requiere rol de admin)
 	logRoutes := router.Group("/api")
 	logRoutes.Use(authMiddleware.RequireAuth())
@@ -151,7 +152,7 @@ func main() {
 		addr := fmt.Sprintf(":%s", cfg.Server.Port)
 		log.Infof("Servidor iniciado en http://localhost%s", addr)
 		log.Infof("WebSockets disponibles en ws://localhost%s/api/metrics/live/{server_id}", addr)
-		
+
 		if err := router.Run(addr); err != nil {
 			log.Fatalf("Error al iniciar servidor: %v", err)
 		}
@@ -160,7 +161,7 @@ func main() {
 	// Bloquear hasta que se reciba una señal de terminación
 	<-quit
 	log.Info("Apagando servidor...")
-	
+
 	// Detener el hub de WebSockets
 	if wsHub != nil {
 		wsHub.Stop()
@@ -170,7 +171,7 @@ func main() {
 	if err := db.Close(); err != nil {
 		log.Errorf("Error al cerrar la conexión a la base de datos: %v", err)
 	}
-	
+
 	// Cerrar conexión a Redis si estaba activa
 	if redisClient != nil {
 		if err := redisClient.Close(); err != nil {
@@ -184,31 +185,31 @@ func main() {
 // createDefaultAdmin crea un usuario administrador por defecto si no existe
 func createDefaultAdmin(userService *services.UserService, log logger.Logger, cfg *config.Config) {
 	_, err := userService.GetUserByUsername("admin")
-	
+
 	// Si el usuario no existe, crearlo
 	if err != nil {
 		log.Info("Creando usuario administrador por defecto...")
-		
+
 		// Usar contraseña de configuración o una por defecto
 		password := cfg.Auth.DefaultAdminPassword
 		if password == "" {
 			password = "admin123" // Contraseña por defecto
 			log.Warn("Usando contraseña por defecto para admin. Se recomienda cambiarla inmediatamente.")
 		}
-		
+
 		admin := &models.User{
 			Username: "admin",
 			Email:    "admin@sistema.local",
 			Role:     models.RoleAdmin,
 		}
-		
+
 		if err := userService.CreateUser(admin, password); err != nil {
 			log.Errorf("Error al crear usuario admin por defecto: %v", err)
 			return
 		}
-		
+
 		log.Info("Usuario administrador creado exitosamente. Username: admin")
 	} else {
 		log.Info("Usuario administrador ya existe, omitiendo creación")
 	}
-} 
+}

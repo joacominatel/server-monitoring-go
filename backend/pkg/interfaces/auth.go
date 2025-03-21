@@ -13,4 +13,4 @@ type AuthServiceInterface interface {
 // ServerServiceInterface define los métodos que debe implementar un servicio de servidores
 type ServerServiceInterface interface {
 	GetServerByID(id uint) (interface{}, error)
-} 
+}

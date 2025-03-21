@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoreo de Servidores</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="bg-blue-600 text-white p-6 rounded-t-lg shadow-md">
+            <h1 class="text-3xl font-bold">Plataforma de Monitoreo de Servidores</h1>
+            <p class="text-sm mt-2">Sistema de monitoreo en tiempo real</p>
+        </div>
+
+        <!-- Navigation -->
+        <div class="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+            <div id="userInfo" class="text-sm font-medium text-gray-700">
+                No has iniciado sesión
+            </div>
+            <div>
+                <button id="logoutBtn" onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 text-sm hidden">
+                    Cerrar Sesión
+                </button>
+            </div>
+        </div>
+
+        <!-- Auth Section -->
+        <div id="authSection" class="bg-white p-6 rounded-b-lg shadow-md mb-8">
+            <div class="flex justify-between mb-4">
+                <button id="loginTabBtn" class="px-4 py-2 bg-blue-500 text-white rounded-t-lg">Login</button>
+                <button id="registerTabBtn" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-t-lg">Registro</button>
+            </div>
+
+            <!-- Login Form -->
+            <div id="loginForm" class="mt-4">
+                <div class="mb-4">
+                    <label for="loginUsername" class="block text-sm font-medium text-gray-700">Usuario</label>
+                    <input type="text" id="loginUsername" class="mt-1 p-2 w-full border rounded-md">
+                </div>
+                <div class="mb-4">
+                    <label for="loginPassword" class="block text-sm font-medium text-gray-700">Contraseña</label>
+                    <input type="password" id="loginPassword" class="mt-1 p-2 w-full border rounded-md">
+                </div>
+                <button onclick="login()" class="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                    Iniciar Sesión
+                </button>
+                <div id="loginError" class="mt-2 text-red-500 text-sm hidden"></div>
+            </div>
+
+            <!-- Register Form -->
+            <div id="registerForm" class="mt-4 hidden">
+                <div class="mb-4">
+                    <label for="registerUsername" class="block text-sm font-medium text-gray-700">Usuario</label>
+                    <input type="text" id="registerUsername" class="mt-1 p-2 w-full border rounded-md">
+                </div>
+                <div class="mb-4">
+                    <label for="registerPassword" class="block text-sm font-medium text-gray-700">Contraseña</label>
+                    <input type="password" id="registerPassword" class="mt-1 p-2 w-full border rounded-md">
+                </div>
+                <div class="mb-4">
+                    <label for="registerConfirm" class="block text-sm font-medium text-gray-700">Confirmar Contraseña</label>
+                    <input type="password" id="registerConfirm" class="mt-1 p-2 w-full border rounded-md">
+                </div>
+                <button onclick="register()" class="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                    Registrar Usuario
+                </button>
+                <div id="registerError" class="mt-2 text-red-500 text-sm hidden"></div>
+                <div id="registerSuccess" class="mt-2 text-green-500 text-sm hidden"></div>
+            </div>
+        </div>
+
+        <!-- Main Content (visible when logged in) -->
+        <div id="mainContent" class="hidden">
+            <!-- Servers Section -->
+            <div id="serverSection" class="bg-white p-6 rounded-lg shadow-md mb-8">
+                <h2 class="text-2xl font-bold mb-4">Servidores</h2>
+                <button onclick="getServers()" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">
+                    Cargar Servidores
+                </button>
+                <div id="serverList" class="mt-4 space-y-4">
+                    <!-- Servers will be displayed here -->
+                </div>
+            </div>
+
+            <!-- Real-time Metrics Section -->
+            <div id="metricsSection" class="bg-white p-6 rounded-lg shadow-md mb-8 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Métricas en Tiempo Real</h2>
+                    <div>
+                        <span id="socketStatus" class="px-2 py-1 bg-gray-200 text-gray-700 rounded-full text-xs">Desconectado</span>
+                        <button id="closeSocketBtn" onclick="closeWebSocket()" class="ml-2 bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 text-sm">
+                            Detener
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="serverInfo" class="mb-4 text-sm text-gray-700">
+                    <!-- Server info here -->
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-medium mb-2">CPU</h3>
+                        <div class="text-3xl font-bold text-blue-600" id="cpuValue">-%</div>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-medium mb-2">Memoria</h3>
+                        <div class="text-3xl font-bold text-green-600" id="memValue">-%</div>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-medium mb-2">Disco</h3>
+                        <div class="text-3xl font-bold text-purple-600" id="diskValue">-%</div>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-medium mb-2">Red</h3>
+                        <div class="text-3xl font-bold text-orange-600" id="networkValue">-</div>
+                    </div>
+                </div>
+                
+                <div class="mt-6">
+                    <h3 class="text-lg font-medium mb-2">CPU Usage History</h3>
+                    <canvas id="cpuChart" width="400" height="100"></canvas>
+                </div>
+                
+                <div class="mt-4">
+                    <h3 class="text-lg font-medium mb-2">Memory Usage History</h3>
+                    <canvas id="memChart" width="400" height="100"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
