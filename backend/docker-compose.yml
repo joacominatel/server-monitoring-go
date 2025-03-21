@@ -1,0 +1,84 @@
+version: '3.9'
+
+services:
+  # Servicio de la aplicación Go
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: servidor-monitoreo:latest
+    container_name: backend-monitoreo
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=server_monitoring
+      - SERVER_PORT=8080
+      - ENV=development
+      - JWT_SECRET=dpQ6hmGE8HaUBcTGvQWEShEvWRsBZ+jdq3CqqAfL1nw=
+      - ADMIN_PASSWORD=admin123
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+      - REDIS_ENABLED=true
+      - WS_PING_INTERVAL=30
+      - WS_ALLOWED_ORIGINS=*
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+  # Servicio de PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-monitoreo
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=server_monitoring
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Servicio de Redis
+  redis:
+    image: redis:7-alpine
+    container_name: redis-monitoreo
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  postgres_data:
+  redis_data: 

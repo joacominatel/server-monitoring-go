@@ -13,7 +13,7 @@ import (
 const (
 	baseURL    = "http://localhost:8080/api"
 	username   = "admin"
-	password   = "Argentina1"
+	password   = "admin123"
 	numServers = 3
 )
 
