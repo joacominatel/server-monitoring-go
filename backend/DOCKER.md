@@ -110,4 +110,4 @@ Para entornos de producción, considera:
 1. Cambiar las credenciales por defecto
 2. Usar secretos de Docker para gestionar contraseñas
 3. Restringir la exposición de puertos
-4. Configurar SSL/TLS para las conexiones 
+4. Configurar SSL/TLS para las conexiones
