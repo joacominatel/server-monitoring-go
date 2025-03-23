@@ -30,6 +30,17 @@ type Server struct {
 	TotalMemory int64  `json:"total_memory"`              // Memoria total en bytes
 	TotalDisk   int64  `json:"total_disk"`                // Almacenamiento total en bytes
 
+	// Etiquetas para categorización personalizada
+	Tags     []string `gorm:"serializer:json" json:"tags"`
+	Location string   `gorm:"size:100" json:"location"` // Ubicación física o lógica
+
+	// Campos para mantenimiento
+	LastMaintenanceDate *time.Time `json:"last_maintenance_date"`
+	NextMaintenanceDate *time.Time `json:"next_maintenance_date"`
+	MaintenanceNotes    string     `gorm:"type:text" json:"maintenance_notes"`
+
 	// Relaciones
-	Metrics []Metric `gorm:"foreignKey:ServerID" json:"metrics,omitempty"`
+	Metrics           []Metric       `gorm:"foreignKey:ServerID" json:"metrics,omitempty"`
+	ServerGroups      []*ServerGroup `gorm:"many2many:server_group_servers;" json:"server_groups,omitempty"`
+	ResponsibleUserID *uint          `gorm:"index" json:"responsible_user_id,omitempty"` // Usuario responsable
 }

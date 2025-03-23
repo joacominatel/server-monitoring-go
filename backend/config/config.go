@@ -12,11 +12,12 @@ import (
 
 // Config contiene toda la configuración de la aplicación
 type Config struct {
-	Database DatabaseConfig
-	Server   ServerConfig
-	Auth     AuthConfig
-	Redis    RedisConfig
-	WebSocket WebSocketConfig
+	Database      DatabaseConfig
+	Server        ServerConfig
+	Auth          AuthConfig
+	Redis         RedisConfig
+	WebSocket     WebSocketConfig
+	Notifications NotificationsConfig
 }
 
 // DatabaseConfig contiene la configuración de la base de datos
@@ -37,7 +38,7 @@ type ServerConfig struct {
 
 // AuthConfig contiene la configuración de autenticación
 type AuthConfig struct {
-	JWTSecret           string
+	JWTSecret            string
 	DefaultAdminPassword string
 }
 
@@ -52,8 +53,20 @@ type RedisConfig struct {
 
 // WebSocketConfig contiene la configuración del servidor WebSocket
 type WebSocketConfig struct {
-	PingInterval int // Intervalo de ping en segundos
+	PingInterval   int // Intervalo de ping en segundos
 	AllowedOrigins []string
+}
+
+// NotificationsConfig contiene la configuración para las notificaciones
+type NotificationsConfig struct {
+	EmailEnabled      bool
+	EmailFrom         string
+	EmailSMTP         string
+	EmailPort         int
+	EmailUser         string
+	EmailPassword     string
+	DiscordEnabled    bool
+	DiscordWebhookURL string
 }
 
 // LoadConfig carga la configuración desde el archivo .env
@@ -79,7 +92,7 @@ func LoadConfig() (*Config, error) {
 			Env:  getEnv("ENV", "development"),
 		},
 		Auth: AuthConfig{
-			JWTSecret:           getEnv("JWT_SECRET", "mi_clave_secreta_jwt_para_desarrollo"),
+			JWTSecret:            getEnv("JWT_SECRET", "mi_clave_secreta_jwt_para_desarrollo"),
 			DefaultAdminPassword: getEnv("ADMIN_PASSWORD", ""),
 		},
 		Redis: RedisConfig{
@@ -90,8 +103,18 @@ func LoadConfig() (*Config, error) {
 			Enabled:  getEnvAsBool("REDIS_ENABLED", false),
 		},
 		WebSocket: WebSocketConfig{
-			PingInterval: getEnvAsInt("WS_PING_INTERVAL", 30),
+			PingInterval:   getEnvAsInt("WS_PING_INTERVAL", 30),
 			AllowedOrigins: getEnvAsStringSlice("WS_ALLOWED_ORIGINS", []string{"*"}),
+		},
+		Notifications: NotificationsConfig{
+			EmailEnabled:      getEnvAsBool("EMAIL_ENABLED", false),
+			EmailFrom:         getEnv("EMAIL_FROM", "alertas@sistema.local"),
+			EmailSMTP:         getEnv("EMAIL_SMTP", "smtp.example.com"),
+			EmailPort:         getEnvAsInt("EMAIL_PORT", 587),
+			EmailUser:         getEnv("EMAIL_USER", ""),
+			EmailPassword:     getEnv("EMAIL_PASSWORD", ""),
+			DiscordEnabled:    getEnvAsBool("DISCORD_ENABLED", false),
+			DiscordWebhookURL: getEnv("DISCORD_WEBHOOK_URL", ""),
 		},
 	}
 
@@ -119,13 +142,13 @@ func getEnvAsInt(key string, defaultValue int) int {
 	if value == "" {
 		return defaultValue
 	}
-	
+
 	var intValue int
 	_, err := fmt.Sscanf(value, "%d", &intValue)
 	if err != nil || intValue != defaultValue {
 		return defaultValue
 	}
-	
+
 	return intValue
 }
 
@@ -135,7 +158,7 @@ func getEnvAsBool(key string, defaultValue bool) bool {
 	if value == "" {
 		return defaultValue
 	}
-	
+
 	return value == "true" || value == "1" || value == "yes" || value == "y"
 }
 
@@ -145,7 +168,7 @@ func getEnvAsStringSlice(key string, defaultValue []string) []string {
 	if value == "" {
 		return defaultValue
 	}
-	
+
 	// Implementación simple para separar por comas
 	return strings.Split(value, ",")
-} 
+}

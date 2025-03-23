@@ -14,6 +14,8 @@ Este es el backend para la Plataforma de Monitoreo de Servidores, desarrollado e
 - Transmisión de métricas en tiempo real mediante WebSockets
 - Control de acceso basado en roles (RBAC)
 - Escalabilidad horizontal con Redis Pub/Sub
+- Sistema de alertas basado en umbrales configurables
+- Notificaciones a través de Discord, Email y Webhooks personalizados
 
 ## Requisitos
 
@@ -48,6 +50,16 @@ REDIS_ENABLED=false
 # Configuración de WebSockets
 WS_PING_INTERVAL=30
 WS_ALLOWED_ORIGINS=*
+
+# Configuración de notificaciones para alertas
+EMAIL_ENABLED=false
+EMAIL_FROM=alertas@sistema.local
+EMAIL_SMTP=smtp.example.com
+EMAIL_PORT=587
+EMAIL_USER=
+EMAIL_PASSWORD=
+DISCORD_ENABLED=false
+DISCORD_WEBHOOK_URL=
 ```
 
 ## Ejecución
@@ -170,6 +182,58 @@ Al iniciar la aplicación por primera vez, se crea un usuario administrador por 
 
 Se recomienda cambiar esta contraseña inmediatamente después del primer inicio de sesión.
 
+## Sistema de Alertas y Umbrales
+
+El sistema implementa un mecanismo de alertas basado en umbrales configurables para métricas de servidores. Cada vez que se recibe una nueva métrica, se evalúa contra los umbrales definidos y se generan alertas cuando corresponde.
+
+### Funcionamiento
+
+1. **Umbrales configurables**: Define condiciones como CPU > 90%, memoria > 80%, etc.
+2. **Evaluación automática**: Cada nueva métrica se verifica contra los umbrales aplicables
+3. **Generación de alertas**: Se crean alertas cuando los valores superan los umbrales establecidos
+4. **Notificaciones**: Envío de notificaciones por canales configurados (Discord, Email, Webhooks)
+5. **Resolución automática**: Las alertas se resuelven automáticamente cuando los valores vuelven a la normalidad
+
+### Tipos de métricas monitorizables
+
+- **CPU**: Porcentaje de uso de CPU
+- **Memoria**: Porcentaje de uso de memoria
+- **Disco**: Porcentaje de uso de disco
+- **Red (entrada)**: Tráfico de red entrante
+- **Red (salida)**: Tráfico de red saliente
+
+### Configuración de umbrales
+
+Los umbrales se pueden configurar con:
+
+- **Severidad**: Info, Warning, Critical
+- **Operador**: >, <, >=, <=, ==
+- **Valor**: Umbral numérico
+- **Cooldown**: Tiempo mínimo entre alertas (evita tormentas de alertas)
+- **Canales de notificación**: Discord, Email, Webhook personalizado
+- **Alcance**: Por servidor específico, por grupo de servidores o global
+
+### Notificaciones
+
+El sistema puede enviar notificaciones por diferentes canales:
+
+1. **Discord**: Mediante webhooks de Discord con mensajes formateados
+2. **Email**: A través de SMTP (pendiente de implementar completamente)
+3. **Webhooks**: Para integración con sistemas externos
+
+Para habilitar Discord, configura:
+```env
+DISCORD_ENABLED=true
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/tu_webhook_url
+```
+
+### Estados de alertas
+
+- **Active**: La alerta está activa y sin atender
+- **Acknowledged**: La alerta ha sido reconocida pero no resuelta
+- **Resolved**: La alerta ha sido resuelta (manual o automáticamente)
+- **Suppressed**: La alerta está temporalmente suprimida
+
 ## API Endpoints
 
 ### Autenticación
@@ -208,6 +272,23 @@ Se recomienda cambiar esta contraseña inmediatamente después del primer inicio
 
 - `GET /api/logs` - Obtener logs con filtros (nivel, fuente, fecha)
 - `DELETE /api/logs/cleanup` - Eliminar logs antiguos
+
+### Alertas
+
+- `GET /api/alerts` - Obtener todas las alertas (con filtros opcionales)
+- `GET /api/alerts/active` - Obtener solo alertas activas
+- `GET /api/alerts/:id` - Obtener una alerta por ID
+- `POST /api/alerts/:id/acknowledge` - Reconocer una alerta
+- `POST /api/alerts/:id/resolve` - Resolver una alerta manualmente
+
+### Umbrales
+
+- `GET /api/alerts/thresholds` - Obtener todos los umbrales configurados
+- `GET /api/alerts/thresholds/:id` - Obtener un umbral por ID
+- `POST /api/alerts/thresholds` - Crear un nuevo umbral (requiere admin)
+- `PUT /api/alerts/thresholds/:id` - Actualizar un umbral (requiere admin)
+- `DELETE /api/alerts/thresholds/:id` - Eliminar un umbral (requiere admin)
+- `GET /api/alerts/thresholds/server/:server_id` - Obtener umbrales aplicables a un servidor
 
 ## Ejemplos de uso
 
@@ -275,4 +356,40 @@ curl "http://localhost:8080/api/logs?source=system&start_date=2023-10-01T00:00:0
 # Limpiar logs antiguos (más de 30 días)
 curl -X DELETE "http://localhost:8080/api/logs/cleanup?days=30" \
   --cookie cookies.txt
-``` 
+```
+
+### Crear un umbral de alerta para CPU
+
+```bash
+curl -X POST http://localhost:8080/api/alerts/thresholds \
+  -H "Content-Type: application/json" \
+  --cookie cookies.txt \
+  -d '{
+    "name": "CPU crítico",
+    "description": "Alerta cuando la CPU supera el 90%",
+    "metric_type": "cpu",
+    "operator": ">",
+    "value": 90.0,
+    "severity": "critical",
+    "enable_discord": true,
+    "cooldown_minutes": 15,
+    "server_id": 1
+  }'
+```
+
+### Obtener alertas activas
+
+```bash
+curl "http://localhost:8080/api/alerts/active" \
+  --cookie cookies.txt
+```
+
+### Reconocer una alerta
+
+```bash
+curl -X POST http://localhost:8080/api/alerts/1/acknowledge \
+  -H "Content-Type: application/json" \
+  --cookie cookies.txt \
+  -d '{
+    "notes": "Investigando el problema de CPU"
+  }' 

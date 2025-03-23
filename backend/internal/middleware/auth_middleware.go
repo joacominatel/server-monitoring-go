@@ -47,12 +47,12 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		claims, err := m.authService.VerifyToken(tokenCookie)
 		if err != nil {
 			m.logger.Warnf("Token inválido: %v", err)
-			
+
 			// Si el token expiró, eliminar la cookie
 			if err == services.ErrTokenExpired {
 				c.SetCookie(AuthCookieName, "", -1, "/", "", false, true)
 			}
-			
+
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "No autorizado"})
 			c.Abort()
 			return
@@ -61,13 +61,13 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		// Almacenar información del usuario en el contexto
 		c.Set(UserIDKey, claims.UserID)
 		c.Set(UserRoleKey, claims.Role)
-		
+
 		c.Next()
 	}
 }
 
-// RequireRole middleware para verificar si el usuario tiene el rol requerido
-func (m *AuthMiddleware) RequireRole(role models.Role) gin.HandlerFunc {
+// RequireRole middleware para verificar si el usuario tiene alguno de los roles requeridos
+func (m *AuthMiddleware) RequireRole(roles ...models.Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Primero verificar autenticación
 		userIDValue, exists := c.Get(UserIDKey)
@@ -86,9 +86,34 @@ func (m *AuthMiddleware) RequireRole(role models.Role) gin.HandlerFunc {
 			return
 		}
 
-		// Verificar rol
-		if err := m.authService.CheckUserRole(userID, role); err != nil {
-			m.logger.Warnf("Acceso denegado: usuario %d no tiene rol %s", userID, role)
+		// Obtener el rol del usuario del contexto
+		userRoleValue, exists := c.Get(UserRoleKey)
+		if !exists {
+			m.logger.Warn("Verificación de rol fallida: rol no encontrado en contexto")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno del servidor"})
+			c.Abort()
+			return
+		}
+
+		userRole, ok := userRoleValue.(models.Role)
+		if !ok {
+			m.logger.Warn("Verificación de rol fallida: tipo de rol inválido")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno del servidor"})
+			c.Abort()
+			return
+		}
+
+		// Verificar si el usuario tiene alguno de los roles requeridos
+		hasRequiredRole := false
+		for _, role := range roles {
+			if userRole == role {
+				hasRequiredRole = true
+				break
+			}
+		}
+
+		if !hasRequiredRole {
+			m.logger.Warnf("Acceso denegado: usuario %d con rol %s no tiene los roles requeridos", userID, userRole)
 			c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado"})
 			c.Abort()
 			return
@@ -104,7 +129,7 @@ func GetUserID(c *gin.Context) (uint, bool) {
 	if !exists {
 		return 0, false
 	}
-	
+
 	id, ok := userID.(uint)
 	return id, ok
 }
@@ -115,7 +140,7 @@ func GetUserRole(c *gin.Context) (models.Role, bool) {
 	if !exists {
 		return "", false
 	}
-	
+
 	role, ok := userRole.(models.Role)
 	return role, ok
-} 
+}

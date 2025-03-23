@@ -15,6 +15,7 @@ import (
 	"github.com/jminat01/dashboard-servers-go/backend/internal/services"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/database"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/logger"
+	"github.com/jminat01/dashboard-servers-go/backend/pkg/notifications"
 	"github.com/jminat01/dashboard-servers-go/backend/pkg/websocket"
 )
 
@@ -45,8 +46,10 @@ func main() {
 	if err := db.AutoMigrate(
 		&models.Server{},
 		&models.Metric{},
-		&models.Log{},  // Añadir tabla de logs
-		&models.User{}, // Añadir tabla de usuarios
+		&models.Log{},            // Añadir tabla de logs
+		&models.User{},           // Añadir tabla de usuarios
+		&models.Alert{},          // Añadir tabla de alertas
+		&models.AlertThreshold{}, // Añadir tabla de umbrales de alertas
 	); err != nil {
 		log.Fatalf("Error en la migración automática: %v", err)
 	}
@@ -79,11 +82,29 @@ func main() {
 	wsHub := websocket.NewHub(log, redisClient)
 	go wsHub.Run() // Iniciar en una goroutine
 
+	// Inicializar manejador de notificaciones (para alertas)
+	notifyConfig := &notifications.NotificationConfig{
+		DiscordEnabled:    cfg.Notifications.DiscordEnabled,
+		DiscordWebhookURL: cfg.Notifications.DiscordWebhookURL,
+		EmailEnabled:      cfg.Notifications.EmailEnabled,
+		SMTPServer:        cfg.Notifications.EmailSMTP,
+		SMTPPort:          cfg.Notifications.EmailPort,
+		SMTPUser:          cfg.Notifications.EmailUser,
+		SMTPPassword:      cfg.Notifications.EmailPassword,
+		EmailFrom:         cfg.Notifications.EmailFrom,
+	}
+	notificationManager := notifications.NewNotificationManager(notifyConfig, log)
+
 	// Inicializar resto de servicios con el nuevo logger
 	serverService := services.NewServerService(db.DB, log)
 	metricService := services.NewMetricService(db.DB, log, wsHub, redisClient)
 	userService := services.NewUserService(db.DB, log)
 	authService := services.NewAuthService(db.DB, log, cfg.Auth.JWTSecret, 86400) // Token válido por 24 horas en segundos
+	alertService := services.NewAlertService(db.DB, log, notificationManager)
+
+	// Configurar las dependencias circulares entre servicios
+	metricService.SetAlertService(alertService)
+	alertService.SetMetricService(metricService)
 
 	// Crear usuario admin por defecto si no existe
 	createDefaultAdmin(userService, log, cfg)
@@ -98,6 +119,7 @@ func main() {
 	logHandler := handlers.NewLogHandler(logService, log)
 	authHandler := handlers.NewAuthHandler(authService, userService, log)
 	userHandler := handlers.NewUserHandler(userService, log)
+	alertHandler := handlers.NewAlertHandler(alertService, log)
 
 	// Configurar router
 	router := gin.Default()
@@ -142,6 +164,11 @@ func main() {
 	logRoutes.Use(authMiddleware.RequireAuth())
 	logRoutes.Use(authMiddleware.RequireRole(models.RoleAdmin))
 	logHandler.RegisterRoutes(logRoutes)
+
+	// Registrar rutas de alertas
+	alertRoutes := router.Group("/api")
+	alertRoutes.Use(authMiddleware.RequireAuth())
+	alertHandler.RegisterRoutes(alertRoutes, authMiddleware)
 
 	// Manejar señales para apagado graceful
 	quit := make(chan os.Signal, 1)
