@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -91,6 +92,19 @@ type Metric struct {
 	Uptime int64 `json:"uptime,omitempty"`
 }
 
+// AlertThreshold representa un umbral para generar alertas
+type AlertThreshold struct {
+	Name            string  `json:"name"`
+	Description     string  `json:"description"`
+	MetricType      string  `json:"metric_type"`
+	Operator        string  `json:"operator"`
+	Value           float64 `json:"value"`
+	Severity        string  `json:"severity"`
+	EnableDiscord   bool    `json:"enable_discord"`
+	CooldownMinutes int     `json:"cooldown_minutes"`
+	ServerID        int     `json:"server_id"`
+}
+
 // Credenciales para login
 type LoginRequest struct {
 	Username string `json:"username"`
@@ -102,6 +116,16 @@ var client *http.Client
 
 // Servidores creados
 var servers []Server
+
+// Variables de flags
+var (
+	stressMode      bool
+	stressMetric    string
+	stressServer    int
+	stressInterval  int
+	stressThreshold float64
+	useThresholds   bool
+)
 
 func init() {
 	// Inicializar el generador de números aleatorios
@@ -118,10 +142,24 @@ func init() {
 		Jar:     jar,
 		Timeout: 10 * time.Second,
 	}
+
+	// Definir flags para el modo de estrés
+	flag.BoolVar(&stressMode, "stress", false, "Activar modo de estrés (genera valores altos para probar alertas)")
+	flag.StringVar(&stressMetric, "metric", "cpu", "Métrica a estresar (cpu, memory, disk, net_in, net_out)")
+	flag.IntVar(&stressServer, "server", 0, "ID del servidor a estresar (0 para todos)")
+	flag.IntVar(&stressInterval, "interval", 2, "Intervalo en segundos entre envío de métricas")
+	flag.Float64Var(&stressThreshold, "threshold", 95.0, "Valor umbral para modo de estrés (porcentaje)")
+	flag.BoolVar(&useThresholds, "create-thresholds", false, "Crear umbrales de alerta automáticamente")
 }
 
 func main() {
+	// Parsear flags
+	flag.Parse()
+
 	fmt.Println("🚀 Iniciando simulador de métricas para debugging")
+	if stressMode {
+		fmt.Printf("⚠️ MODO ESTRÉS ACTIVADO: %s al %.1f%%\n", stressMetric, stressThreshold)
+	}
 
 	// Login para obtener cookie de autenticación
 	err := login(username, password)
@@ -148,8 +186,14 @@ func main() {
 			server.OS)
 	}
 
+	// Crear umbrales de alerta si se solicita
+	if useThresholds {
+		fmt.Println("🔔 Creando umbrales de alerta para pruebas...")
+		createTestThresholds()
+	}
+
 	// Intervalo para enviar métricas
-	interval := 2 * time.Second
+	interval := time.Duration(stressInterval) * time.Second
 	fmt.Printf("📊 Enviando métricas cada %v\n", interval)
 	fmt.Println("⏱️  Presiona Ctrl+C para detener")
 
@@ -157,16 +201,62 @@ func main() {
 	ticker := time.NewTicker(interval)
 	for range ticker.C {
 		for _, server := range servers {
-			metric := generateRandomMetric(server.ID)
+			// Si estamos en modo estrés y hemos especificado un servidor, saltamos los demás
+			if stressMode && stressServer != 0 && stressServer != server.ID {
+				continue
+			}
+
+			var metric Metric
+			if stressMode {
+				metric = generateStressMetric(server.ID)
+			} else {
+				metric = generateRandomMetric(server.ID)
+			}
+
 			err := sendMetric(metric)
 			if err != nil {
 				fmt.Printf("❌ Error enviando métrica para servidor %d: %v\n", server.ID, err)
 			} else {
-				fmt.Printf("📤 Métrica enviada para servidor %d: CPU %.1f%%, MEM %.1f%%, DISK %.1f%%\n",
-					server.ID,
-					metric.CPUUsage,
-					float64(metric.MemoryUsed)/float64(metric.MemoryTotal)*100,
-					float64(metric.DiskUsed)/float64(metric.DiskTotal)*100)
+				cpuValue := metric.CPUUsage
+				memValue := float64(metric.MemoryUsed) / float64(metric.MemoryTotal) * 100
+				diskValue := float64(metric.DiskUsed) / float64(metric.DiskTotal) * 100
+				netInValue := float64(metric.NetDownload) / 1024 / 1024 // MB
+				netOutValue := float64(metric.NetUpload) / 1024 / 1024  // MB
+
+				fmt.Printf("📤 Servidor %d: ", server.ID)
+
+				// Destacar valores altos con color y emoji según la métrica
+				if cpuValue > 80 {
+					fmt.Printf("🔥 CPU %.1f%% ", cpuValue)
+				} else {
+					fmt.Printf("CPU %.1f%% ", cpuValue)
+				}
+
+				if memValue > 80 {
+					fmt.Printf("🔥 MEM %.1f%% ", memValue)
+				} else {
+					fmt.Printf("MEM %.1f%% ", memValue)
+				}
+
+				if diskValue > 80 {
+					fmt.Printf("🔥 DISK %.1f%% ", diskValue)
+				} else {
+					fmt.Printf("DISK %.1f%% ", diskValue)
+				}
+
+				if netInValue > 50 {
+					fmt.Printf("🔥 NET_IN %.1fMB ", netInValue)
+				} else {
+					fmt.Printf("NET_IN %.1fMB ", netInValue)
+				}
+
+				if netOutValue > 50 {
+					fmt.Printf("🔥 NET_OUT %.1fMB", netOutValue)
+				} else {
+					fmt.Printf("NET_OUT %.1fMB", netOutValue)
+				}
+
+				fmt.Println()
 			}
 		}
 		fmt.Println("---")
@@ -199,6 +289,104 @@ func login(username, password string) error {
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("login fallido: código de estado %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// Crear umbrales de alerta para pruebas
+func createTestThresholds() {
+	for _, server := range servers {
+		// Crear umbral para CPU
+		createAlertThreshold(AlertThreshold{
+			Name:            "CPU crítico",
+			Description:     "Alerta cuando el uso de CPU supera el 90%",
+			MetricType:      "cpu",
+			Operator:        ">",
+			Value:           90.0,
+			Severity:        "critical",
+			EnableDiscord:   true,
+			CooldownMinutes: 2,
+			ServerID:        server.ID,
+		})
+
+		// Crear umbral para memoria
+		createAlertThreshold(AlertThreshold{
+			Name:            "Memoria crítica",
+			Description:     "Alerta cuando el uso de memoria supera el 90%",
+			MetricType:      "memory",
+			Operator:        ">",
+			Value:           90.0,
+			Severity:        "critical",
+			EnableDiscord:   true,
+			CooldownMinutes: 2,
+			ServerID:        server.ID,
+		})
+
+		// Crear umbral para disco
+		createAlertThreshold(AlertThreshold{
+			Name:            "Disco crítico",
+			Description:     "Alerta cuando el uso de disco supera el 90%",
+			MetricType:      "disk",
+			Operator:        ">",
+			Value:           90.0,
+			Severity:        "critical",
+			EnableDiscord:   true,
+			CooldownMinutes: 2,
+			ServerID:        server.ID,
+		})
+
+		// Crear umbral para red (download)
+		createAlertThreshold(AlertThreshold{
+			Name:            "Tráfico de red entrante alto",
+			Description:     "Alerta cuando el tráfico de red entrante supera los 50 MB/s",
+			MetricType:      "network_in",
+			Operator:        ">",
+			Value:           50.0, // MB/s
+			Severity:        "warning",
+			EnableDiscord:   true,
+			CooldownMinutes: 2,
+			ServerID:        server.ID,
+		})
+
+		// Crear umbral para red (upload)
+		createAlertThreshold(AlertThreshold{
+			Name:            "Tráfico de red saliente alto",
+			Description:     "Alerta cuando el tráfico de red saliente supera los 50 MB/s",
+			MetricType:      "network_out",
+			Operator:        ">",
+			Value:           50.0, // MB/s
+			Severity:        "warning",
+			EnableDiscord:   true,
+			CooldownMinutes: 2,
+			ServerID:        server.ID,
+		})
+
+		fmt.Printf("✅ Umbrales de alerta creados para servidor %d\n", server.ID)
+	}
+}
+
+// Crear un umbral de alerta
+func createAlertThreshold(threshold AlertThreshold) error {
+	jsonData, err := json.Marshal(threshold)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", baseURL+"/alerts/thresholds", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("error al crear umbral: código de estado %d", resp.StatusCode)
 	}
 
 	return nil
@@ -453,6 +641,67 @@ func generateRandomMetric(serverID int) Metric {
 		HandleCount:    handleCount,
 		Uptime:         uptime,
 	}
+}
+
+// Generar métricas en modo estrés para probar alertas
+func generateStressMetric(serverID int) Metric {
+	// Primero generamos una métrica normal como base
+	metric := generateRandomMetric(serverID)
+
+	// Luego ajustamos según el tipo de métrica a estresar
+	switch stressMetric {
+	case "cpu":
+		// Generar valor alto de CPU
+		metric.CPUUsage = stressThreshold + rand.Float64()*5.0 // Valor entre threshold y threshold+5
+		if metric.CPUUsage > 100.0 {
+			metric.CPUUsage = 99.9
+		}
+
+	case "memory":
+		// Generar valor alto de memoria
+		metric.MemoryUsed = int64(float64(metric.MemoryTotal) * stressThreshold / 100.0)
+		metric.MemoryFree = metric.MemoryTotal - metric.MemoryUsed
+
+	case "disk":
+		// Generar valor alto de disco
+		metric.DiskUsed = int64(float64(metric.DiskTotal) * stressThreshold / 100.0)
+		metric.DiskFree = metric.DiskTotal - metric.DiskUsed
+
+	case "net_in":
+		// Generar valor alto de tráfico de red entrante
+		mbToBytes := int64(stressThreshold * 1024 * 1024) // Convertir MB a bytes
+		metric.NetDownload = mbToBytes + rand.Int63n(mbToBytes/2)
+
+	case "net_out":
+		// Generar valor alto de tráfico de red saliente
+		mbToBytes := int64(stressThreshold * 1024 * 1024) // Convertir MB a bytes
+		metric.NetUpload = mbToBytes + rand.Int63n(mbToBytes/2)
+
+	case "random":
+		// Elegir aleatoriamente una métrica para estresar
+		r := rand.Intn(5)
+		switch r {
+		case 0:
+			metric.CPUUsage = stressThreshold + rand.Float64()*5.0
+			if metric.CPUUsage > 100.0 {
+				metric.CPUUsage = 99.9
+			}
+		case 1:
+			metric.MemoryUsed = int64(float64(metric.MemoryTotal) * stressThreshold / 100.0)
+			metric.MemoryFree = metric.MemoryTotal - metric.MemoryUsed
+		case 2:
+			metric.DiskUsed = int64(float64(metric.DiskTotal) * stressThreshold / 100.0)
+			metric.DiskFree = metric.DiskTotal - metric.DiskUsed
+		case 3:
+			mbToBytes := int64(stressThreshold * 1024 * 1024)
+			metric.NetDownload = mbToBytes + rand.Int63n(mbToBytes/2)
+		case 4:
+			mbToBytes := int64(stressThreshold * 1024 * 1024)
+			metric.NetUpload = mbToBytes + rand.Int63n(mbToBytes/2)
+		}
+	}
+
+	return metric
 }
 
 // Enviar métrica al servidor
